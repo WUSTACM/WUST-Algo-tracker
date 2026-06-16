@@ -34,12 +34,17 @@ jobs:
           tar --exclude='.git' --exclude='node_modules' --exclude='dist' -C backend -czf backend.tar.gz .
           tar --exclude='.git' --exclude='node_modules' --exclude='dist' -C frontend -czf frontend.tar.gz .
 
-      - name: Install sshpass
-        run: sudo apt-get update && sudo apt-get install -y sshpass
+      - name: Configure SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
 
       - name: Upload release archives
         env:
-          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SUDO_PASSWORD: ${{ secrets.DEPLOY_SUDO_PASSWORD }}
@@ -48,16 +53,15 @@ jobs:
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
           printf 'APP_ROOT=%q\nDEPLOY_SUDO_PASSWORD=%q\n' "${APP_ROOT:-/opt/wust-algo}" "${DEPLOY_SUDO_PASSWORD:-}" > deploy.env
-          sshpass -e ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" 'mkdir -p /tmp/wust-algo-release'
-          sshpass -e scp -o StrictHostKeyChecking=no backend.tar.gz frontend.tar.gz deploy.env "$DEPLOY_USER@$DEPLOY_HOST:/tmp/wust-algo-release/"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" 'mkdir -p /tmp/wust-algo-release'
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no backend.tar.gz frontend.tar.gz deploy.env "$DEPLOY_USER@$DEPLOY_HOST:/tmp/wust-algo-release/"
 
       - name: Deploy on server
         env:
-          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          sshpass -e ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           set -a
           . /tmp/wust-algo-release/deploy.env

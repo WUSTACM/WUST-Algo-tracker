@@ -89,7 +89,7 @@ echo "Repository: ${repo_dir}"
 echo "Deploy dir: ${deploy_dir}"
 echo "App root: ${APP_ROOT:-<unset>}"
 
-for cmd in bash curl docker envsubst go npm pg_dump pg_restore psql sudo systemctl; do
+for cmd in bash curl docker envsubst go npm psql sudo systemctl; do
   check_command "${cmd}"
 done
 
@@ -98,6 +98,13 @@ if command -v docker >/dev/null 2>&1; then
     ok "docker compose is available"
   else
     fail "docker compose plugin is not available"
+  fi
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'wust-algo-postgres'; then
+    ok "database backup tools will use PostgreSQL container"
+  elif command -v pg_dump >/dev/null 2>&1 && command -v pg_restore >/dev/null 2>&1; then
+    warn "PostgreSQL container is not running; database backups will fall back to host pg_dump/pg_restore"
+  else
+    warn "PostgreSQL container is not running and host pg_dump/pg_restore are missing"
   fi
 fi
 

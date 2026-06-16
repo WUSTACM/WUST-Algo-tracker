@@ -8,8 +8,6 @@ source "${script_dir}/lib.sh"
 load_env
 
 require_command find
-require_command pg_dump
-require_command pg_restore
 require_command sha256sum
 require_command stat
 
@@ -37,22 +35,39 @@ backup_dir="${DB_BACKUP_DIR}/db-${timestamp}"
 umask 077
 mkdir -p "${backup_dir}"
 
+use_postgres_container=false
+if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx 'wust-algo-postgres'; then
+  use_postgres_container=true
+else
+  require_command pg_dump
+  require_command pg_restore
+fi
+
 dump_database() {
   local db_name="$1"
   local dump_file="${backup_dir}/${db_name}.dump"
 
   echo "Dumping ${db_name}..."
-  PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump \
-    -h "${POSTGRES_HOST}" \
-    -p "${POSTGRES_PORT}" \
-    -U "${POSTGRES_USER}" \
-    --format=custom \
-    --no-owner \
-    --no-privileges \
-    -d "${db_name}" \
-    -f "${dump_file}"
-
-  pg_restore --list "${dump_file}" >/dev/null
+  if [[ "${use_postgres_container}" == "true" ]]; then
+    docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" wust-algo-postgres pg_dump \
+      -U "${POSTGRES_USER}" \
+      --format=custom \
+      --no-owner \
+      --no-privileges \
+      -d "${db_name}" > "${dump_file}"
+    docker exec -i wust-algo-postgres pg_restore --list < "${dump_file}" >/dev/null
+  else
+    PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump \
+      -h "${POSTGRES_HOST}" \
+      -p "${POSTGRES_PORT}" \
+      -U "${POSTGRES_USER}" \
+      --format=custom \
+      --no-owner \
+      --no-privileges \
+      -d "${db_name}" \
+      -f "${dump_file}"
+    pg_restore --list "${dump_file}" >/dev/null
+  fi
   sha256sum "${dump_file}" >> "${backup_dir}/SHA256SUMS"
 }
 

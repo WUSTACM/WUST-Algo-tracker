@@ -16,8 +16,6 @@ export DB_BACKUP_DIR DB_BACKUP_RETENTION_DAYS DB_BACKUP_KEEP_RECENT DB_BACKUP_TI
 require_command docker
 require_command envsubst
 require_command go
-require_command pg_dump
-require_command pg_restore
 require_command psql
 require_command sudo
 require_command systemctl

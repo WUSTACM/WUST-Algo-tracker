@@ -73,7 +73,7 @@ v1.1.2 聚焦团队权限闭环：
 
 ## 技术栈
 
-- Go 1.25.3
+- Go 1.25.11
 - Kratos
 - PostgreSQL
 - Redis
@@ -138,9 +138,9 @@ git clone https://github.com/WUSTACM/WUST-Algo-Frontend.git frontend
 
 ```bash
 cd /tmp
-wget https://go.dev/dl/go1.25.3.linux-amd64.tar.gz
+wget https://go.dev/dl/go1.25.11.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.25.3.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.11.linux-amd64.tar.gz
 echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 go version

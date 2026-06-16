@@ -195,12 +195,17 @@ func (p *ProfileService) ChangePassword(ctx context.Context, req *ChangePassword
 		if req.OldPassword == "" {
 			return nil, errors.BadRequest("参数错误", "请输入旧密码")
 		}
-		if target.Password != req.OldPassword {
+		validPassword, _ := verifyPassword(target.Password, req.OldPassword)
+		if !validPassword {
 			return &ChangePasswordReply{Success: false, Message: "旧密码错误"}, nil
 		}
 	}
 
-	if err := p.profileDal.ChangePassword(ctx, req.UserId, req.NewPassword); err != nil {
+	newPasswordHash, err := hashPassword(req.NewPassword)
+	if err != nil {
+		return nil, errors.InternalServer("内部错误", "密码加密失败")
+	}
+	if err := p.profileDal.ChangePassword(ctx, req.UserId, newPasswordHash); err != nil {
 		return nil, errors.InternalServer("内部错误", err.Error())
 	}
 	recordUserOperation(ctx, p.profileDal, "profile.change_password", "user", req.UserId, map[string]any{

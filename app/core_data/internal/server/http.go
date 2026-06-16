@@ -8,7 +8,7 @@ import (
 	statistic2 "cwxu-algo/api/core/v1/statistic"
 	"cwxu-algo/api/core/v1/submit_log"
 	"cwxu-algo/app/common/conf"
-	_const "cwxu-algo/app/common/const"
+	authutil "cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/core_data/internal/service"
 	"encoding/json"
 	nethttp "net/http"
@@ -51,11 +51,15 @@ func NewWhiteListMatcher() selector.MatchFunc {
 
 // NewHTTPServer new an HTTP server.
 func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.SubmitLogService, spiderService *service.SpiderService, statisticService *service.StatisticService, contestLogService *service.ContestLogService, bulletinService *service.BulletinService) *http.Server {
+	jwtSecret, err := authutil.JWTSecretBytes(c)
+	if err != nil {
+		panic(err)
+	}
 	var opts = []http.ServerOption{
 		http.Middleware(
 			recovery.Recovery(),
 			selector.Server(jwt.Server(func(token *jwt2.Token) (interface{}, error) {
-				return []byte(_const.JWTSecret), nil
+				return jwtSecret, nil
 			})).Match(NewWhiteListMatcher()).Build(),
 		),
 	}

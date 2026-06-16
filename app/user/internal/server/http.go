@@ -7,7 +7,7 @@ import (
 	"cwxu-algo/api/user/v1/profile"
 	"cwxu-algo/api/user/v1/role"
 	"cwxu-algo/app/common/conf"
-	_const "cwxu-algo/app/common/const"
+	authutil "cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/user/internal/service"
 
 	"github.com/go-kratos/kratos/v2/log"
@@ -50,11 +50,15 @@ func NewHTTPServer(
 	logger log.Logger,
 
 ) *http.Server {
+	jwtSecret, err := authutil.JWTSecretBytes(c)
+	if err != nil {
+		panic(err)
+	}
 	var opts = []http.ServerOption{
 		http.Middleware(
 			recovery.Recovery(),
 			selector.Server(jwt.Server(func(token *jwt2.Token) (interface{}, error) {
-				return []byte(_const.JWTSecret), nil
+				return jwtSecret, nil
 			})).Match(NewWhiteListMatcher()).Build(),
 		),
 	}

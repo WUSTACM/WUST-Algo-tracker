@@ -6,6 +6,7 @@ server:
     addr: 0.0.0.0:9000
     timeout: 1s
   reg_dsn: 192.168.1.7:8500
+  jwt_secret: replace-with-at-least-32-random-characters
 data:
   database:
     driver: postgres

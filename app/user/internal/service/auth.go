@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	pb "cwxu-algo/api/user/v1/auth"
-	_const "cwxu-algo/app/common/const"
+	"cwxu-algo/app/common/conf"
 	authutil "cwxu-algo/app/common/utils/auth"
 	"cwxu-algo/app/user/internal/data"
 	"cwxu-algo/app/user/internal/data/model"
@@ -24,7 +24,8 @@ const (
 )
 
 type AuthService struct {
-	db *gorm.DB
+	db        *gorm.DB
+	jwtSecret []byte
 }
 
 type UserOperationLogItem struct {
@@ -52,9 +53,14 @@ type UserOperationLogReply struct {
 	Total   int64                  `json:"total"`
 }
 
-func NewAuthService(d *data.Data) *AuthService {
+func NewAuthService(d *data.Data, c *conf.Server) *AuthService {
+	jwtSecret, err := authutil.JWTSecretBytes(c)
+	if err != nil {
+		panic(err)
+	}
 	return &AuthService{
-		db: d.DB,
+		db:        d.DB,
+		jwtSecret: jwtSecret,
 	}
 }
 
@@ -73,11 +79,27 @@ func (s *AuthService) Login(ctx context.Context, req *pb.LoginReq) (*pb.LoginRes
 	res := &pb.LoginRes{}
 	// 做校验
 	u := &model.User{}
-	r := s.db.Where("username = ? and password = ?", req.Username, req.Password).First(&u)
+	r := s.db.Where("username = ?", req.Username).First(&u)
 	if errors.Is(r.Error, gorm.ErrRecordNotFound) {
 		res.Success = false
 		res.Message = "用户名或密码错误"
 		return res, nil
+	}
+	if r.Error != nil {
+		res.Success = false
+		res.Message = "登录失败"
+		return res, nil
+	}
+	validPassword, needsRehash := verifyPassword(u.Password, req.Password)
+	if !validPassword {
+		res.Success = false
+		res.Message = "用户名或密码错误"
+		return res, nil
+	}
+	if needsRehash {
+		if passwordHash, err := hashPassword(req.Password); err == nil {
+			_ = s.db.Model(&model.User{}).Where("id = ?", u.ID).Update("password", passwordHash).Error
+		}
 	}
 	// 签发 JWT Token
 	expire := time.Now().Add(8640 * time.Hour) // 过期时间8640小时
@@ -94,7 +116,7 @@ func (s *AuthService) Login(ctx context.Context, req *pb.LoginReq) (*pb.LoginRes
 		"roleIds":  string(_roleIdsJSON),
 		"exp":      expire.Unix(),
 		"nbf":      time.Now().Unix(),
-	}).SignedString([]byte(_const.JWTSecret))
+	}).SignedString(s.jwtSecret)
 	if err != nil {
 		res.Success = false
 		res.Message = "身份校验成功，但是jwt生成失败了." + err.Error()
@@ -126,9 +148,15 @@ func (s *AuthService) Register(ctx context.Context, req *pb.RegisterReq) (res *p
 		return
 	}
 	// 尝试去注册
+	passwordHash, hashErr := hashPassword(req.Password)
+	if hashErr != nil {
+		res.Success = false
+		res.Message = "密码加密失败"
+		return
+	}
 	newUser := &model.User{
 		Username: req.Username,
-		Password: req.Password,
+		Password: passwordHash,
 		Avatar:   "",
 		Name:     req.Name,
 		Email:    req.Email,

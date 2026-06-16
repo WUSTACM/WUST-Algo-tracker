@@ -6,6 +6,7 @@ server:
     addr: ${USER_GRPC_ADDR}
     timeout: 5s
   reg_dsn: ${CONSUL_HOST}:${CONSUL_PORT}
+  jwt_secret: ${JWT_SECRET}
 data:
   database:
     driver: postgres

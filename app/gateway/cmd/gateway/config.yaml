@@ -1,8 +1,15 @@
 # This is a gateway config.
 name: cwxu-algo
 version: v1
-#middlewares:
-#  - name: jwt
+middlewares:
+  - name: jwt
+    required: true
+    options:
+      '@type': type.googleapis.com/gateway.middleware.jwt.v1.Jwt
+      secret: replace-with-at-least-32-random-characters
+      publicPaths:
+        - /v1/user/auth/login
+        - /v1/user/auth/register
 endpoints:
   - path: /v1/user/*
     timeout: 5s

@@ -89,7 +89,7 @@ echo "Repository: ${repo_dir}"
 echo "Deploy dir: ${deploy_dir}"
 echo "App root: ${APP_ROOT:-<unset>}"
 
-for cmd in bash curl docker envsubst go npm psql sudo systemctl; do
+for cmd in bash curl docker envsubst go npm pg_dump pg_restore psql sudo systemctl; do
   check_command "${cmd}"
 done
 
@@ -134,12 +134,20 @@ required_env=(
   AGENT_HTTP_ADDR
   AGENT_GRPC_ADDR
   GATEWAY_ADDR
+  JWT_SECRET
   ENABLE_AGENT
 )
 
 for name in "${required_env[@]}"; do
   require_env_value "${name}"
 done
+
+if [[ -n "${JWT_SECRET:-}" ]]; then
+  if (( ${#JWT_SECRET} < 32 )); then
+    fail "JWT_SECRET must be at least 32 characters"
+  fi
+  warn_placeholder JWT_SECRET
+fi
 
 case "${ENABLE_AGENT:-}" in
   0 | 1) ok "ENABLE_AGENT=${ENABLE_AGENT}" ;;
@@ -160,6 +168,7 @@ if [[ -n "${APP_ROOT:-}" ]]; then
   check_writable_dir "${APP_ROOT}/bin" "backend bin directory"
   check_writable_dir "${APP_ROOT}/conf" "config directory"
   check_writable_dir "${APP_ROOT}/infra" "infra directory"
+  check_writable_dir "${DB_BACKUP_DIR:-${APP_ROOT}/backups/database}" "database backup directory"
 fi
 
 if [[ -n "${FRONTEND_DIR:-}" ]]; then

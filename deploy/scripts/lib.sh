@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 deploy_dir="$(cd "${script_dir}/.." && pwd)"
+# shellcheck disable=SC2034
 repo_dir="$(cd "${deploy_dir}/.." && pwd)"
 
 export PATH="/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
@@ -15,7 +16,7 @@ load_env() {
   fi
 
   set -a
-  # shellcheck disable=SC1091
+  # shellcheck disable=SC1090,SC1091
   source "${deploy_dir}/.env"
   set +a
 }

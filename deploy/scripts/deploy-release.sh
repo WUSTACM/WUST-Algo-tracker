@@ -122,7 +122,7 @@ backup_path "${APP_ROOT}/conf" "${BACKUP_DIR}/conf"
 backup_path "${APP_ROOT}/infra/docker-compose.yml" "${BACKUP_DIR}/infra/docker-compose.yml"
 backup_path "${FRONTEND_DIR}/dist" "${BACKUP_DIR}/frontend/dist"
 backup_path "/etc/nginx/sites-available/${NGINX_SITE_NAME:-wust-algo}" "${BACKUP_DIR}/nginx/${NGINX_SITE_NAME:-wust-algo}"
-for unit in wust-user.service wust-core-data.service wust-gateway.service wust-agent.service; do
+for unit in wust-user.service wust-core-data.service wust-gateway.service wust-agent.service wust-db-backup.service wust-db-backup.timer; do
   backup_path "/etc/systemd/system/${unit}" "${BACKUP_DIR}/systemd/${unit}"
 done
 

@@ -7,6 +7,7 @@ server:
     timeout: 10s
   reg_dsn: ${CONSUL_HOST}:${CONSUL_PORT}
   amqp_dsn: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@${RABBITMQ_HOST}:${RABBITMQ_PORT}/${RABBITMQ_VHOST}
+  jwt_secret: ${JWT_SECRET}
 data:
   database:
     driver: postgres

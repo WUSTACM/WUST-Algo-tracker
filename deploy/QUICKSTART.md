@@ -34,9 +34,9 @@ Install Go matching `go.mod`:
 
 ```bash
 cd /tmp
-wget https://go.dev/dl/go1.25.3.linux-amd64.tar.gz
+wget https://go.dev/dl/go1.25.11.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.25.3.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.11.linux-amd64.tar.gz
 echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -64,6 +64,24 @@ bash deploy/scripts/deploy-backend.sh
 
 Keep `ENABLE_AGENT=0` until OpenAI-compatible AI settings and SMTP settings are real.
 For DeepSeek, set `AI_BASE_URL=https://api.deepseek.com`, `AI_MODEL=deepseek-chat`, and `AI_API_KEY`.
+Set `JWT_SECRET` to a random value of at least 32 characters before starting the services.
+
+The backend deploy installs `wust-db-backup.timer`, which runs PostgreSQL dumps into `/opt/wust-algo/backups/database` by default. Run a backup manually with:
+
+```bash
+cd /opt/wust-algo/tracker
+bash deploy/scripts/backup-db.sh
+systemctl list-timers wust-db-backup.timer
+```
+
+To verify a dump before a restore window:
+
+```bash
+pg_restore --list /opt/wust-algo/backups/database/latest/algo_user.dump >/dev/null
+pg_restore --list /opt/wust-algo/backups/database/latest/algo_core_data.dump >/dev/null
+```
+
+To restore, stop the app services, create fresh target databases, then run `pg_restore --clean --if-exists --no-owner --no-privileges -d <database> <dump-file>` for each dump.
 
 ## 4. Deploy Frontend
 

@@ -7,14 +7,23 @@ source "${script_dir}/lib.sh"
 
 load_env
 
+DB_BACKUP_DIR="${DB_BACKUP_DIR:-${APP_ROOT}/backups/database}"
+DB_BACKUP_RETENTION_DAYS="${DB_BACKUP_RETENTION_DAYS:-14}"
+DB_BACKUP_KEEP_RECENT="${DB_BACKUP_KEEP_RECENT:-30}"
+DB_BACKUP_TIMER_ON_CALENDAR="${DB_BACKUP_TIMER_ON_CALENDAR:-*-*-* 03:30:00}"
+export DB_BACKUP_DIR DB_BACKUP_RETENTION_DAYS DB_BACKUP_KEEP_RECENT DB_BACKUP_TIMER_ON_CALENDAR
+
 require_command docker
 require_command envsubst
 require_command go
+require_command pg_dump
+require_command pg_restore
 require_command psql
 require_command sudo
 require_command systemctl
 
-mkdir -p "${APP_ROOT}/bin" "${APP_ROOT}/infra"
+mkdir -p "${APP_ROOT}/bin" "${APP_ROOT}/infra" "${DB_BACKUP_DIR}"
+chmod 700 "${DB_BACKUP_DIR}"
 
 echo "Installing infrastructure compose file..."
 install -m 0644 "${deploy_dir}/docker-compose.infra.yml" "${APP_ROOT}/infra/docker-compose.yml"
@@ -55,11 +64,14 @@ sudo_write_template "${deploy_dir}/systemd/wust-user.service.tpl" /etc/systemd/s
 sudo_write_template "${deploy_dir}/systemd/wust-core-data.service.tpl" /etc/systemd/system/wust-core-data.service
 sudo_write_template "${deploy_dir}/systemd/wust-agent.service.tpl" /etc/systemd/system/wust-agent.service
 sudo_write_template "${deploy_dir}/systemd/wust-gateway.service.tpl" /etc/systemd/system/wust-gateway.service
+sudo_write_template "${deploy_dir}/systemd/wust-db-backup.service.tpl" /etc/systemd/system/wust-db-backup.service
+sudo_write_template "${deploy_dir}/systemd/wust-db-backup.timer.tpl" /etc/systemd/system/wust-db-backup.timer
 
 run_sudo systemctl daemon-reload
 run_sudo systemctl enable wust-user.service
 run_sudo systemctl enable wust-core-data.service
 run_sudo systemctl enable wust-gateway.service
+run_sudo systemctl enable --now wust-db-backup.timer
 run_sudo systemctl restart wust-user.service
 run_sudo systemctl restart wust-core-data.service
 run_sudo systemctl restart wust-gateway.service

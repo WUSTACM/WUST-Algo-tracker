@@ -33,12 +33,21 @@ type Data struct {
 func NewData(c *conf.Data) (*Data, func(), error) {
 	data := &Data{RDB: redis2.InitRedis(c)}
 	//migrateModels(data.DB)
-	cleanup := func() {
+	return data, cleanupData(data), nil
+}
+
+func cleanupData(data *Data) func() {
+	return func() {
 		log.Info("closing the data resources")
-		sql, _ := data.DB.DB()
-		sql.Close()
+		if data.DB != nil {
+			if sql, err := data.DB.DB(); err == nil {
+				_ = sql.Close()
+			}
+		}
+		if data.RDB != nil {
+			_ = data.RDB.Close()
+		}
 	}
-	return data, cleanup, nil
 }
 
 //// migrateModels 合并

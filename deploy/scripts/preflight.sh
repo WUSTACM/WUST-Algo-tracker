@@ -162,10 +162,22 @@ case "${ENABLE_AGENT:-}" in
 esac
 
 if [[ "${ENABLE_AGENT:-0}" == "1" ]]; then
-  for name in AI_BASE_URL AI_MODEL AI_API_KEY SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM; do
+  for name in AI_BASE_URL AI_MODEL AI_API_KEY; do
     require_env_value "${name}"
     warn_placeholder "${name}"
   done
+  smtp_missing=0
+  for name in SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM; do
+    if [[ -z "${!name:-}" ]]; then
+      warn "missing SMTP env: ${name}; email delivery will fail until SMTP is configured"
+      smtp_missing=1
+    else
+      warn_placeholder "${name}"
+    fi
+  done
+  if (( smtp_missing > 0 )); then
+    warn "AI summary can still run with SMTP incomplete; only email delivery is affected"
+  fi
 else
   warn "agent service is disabled; AI summary and email delivery will be skipped"
 fi

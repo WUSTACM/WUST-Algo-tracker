@@ -62,8 +62,9 @@ nano deploy/.env
 bash deploy/scripts/deploy-backend.sh
 ```
 
-Keep `ENABLE_AGENT=0` until OpenAI-compatible AI settings and SMTP settings are real.
+Keep `ENABLE_AGENT=0` until OpenAI-compatible AI settings are real.
 For DeepSeek, set `AI_BASE_URL=https://api.deepseek.com`, `AI_MODEL=deepseek-chat`, and `AI_API_KEY`.
+Set `SMTP_*` to real values before enabling email delivery; missing or placeholder SMTP values do not need to block the in-page AI summary service.
 Set `JWT_SECRET` to a random value of at least 32 characters before starting the services.
 
 The backend deploy installs `wust-db-backup.timer`, which runs PostgreSQL dumps into `/opt/wust-algo/backups/database` by default. Run a backup manually with:

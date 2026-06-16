@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"cwxu-algo/app/agent/internal/agent"
+	"cwxu-algo/app/agent/internal/agent/tool"
 	"cwxu-algo/app/agent/internal/agent/tool/core_data"
 	data2 "cwxu-algo/app/agent/internal/agent/tool/data"
 	"cwxu-algo/app/agent/internal/agent/tool/utils"
@@ -34,6 +35,9 @@ type SummaryUseCase struct {
 	now                    func() time.Time
 	userProfileFn          func(userId int64) *profile2.GetByIdRes
 	weeklyReportForCoachFn func(coachUserId int64) error
+	chatFn                 func(messages []*model.ChatCompletionMessage, tools ...tool.AgentToolFactory) (string, error)
+	redisExistsFn          func(ctx context.Context, key string) (int64, error)
+	redisSetFn             func(ctx context.Context, key string, value string) error
 }
 
 func NewSummaryUseCase(chat *agent.Chat, mailConf *conf.SMTP, reg *discovery.Register, redis *data.Data) *SummaryUseCase {
@@ -51,7 +55,6 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 		log.Infof("用户 %d 已关闭邮件发送，跳过", userId)
 		return nil
 	}
-	chat := uc.chat
 	// 获取昨天日期
 	lastDay := uc.currentTime()
 	lastDay = lastDay.AddDate(0, 0, -1)
@@ -107,7 +110,7 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 		uc.mailConf.Username,
 		uc.mailConf.Password,
 		uc.mailConf.From)
-	r, err := chat.Chat(msg, core_data.NewSubmitCnt(uc.reg), core_data.NewGetProfileById(uc.reg), core_data.NewSubmitLog(uc.reg), emailTool)
+	r, err := uc.runChat(msg, core_data.NewSubmitCnt(uc.reg), core_data.NewGetProfileById(uc.reg), core_data.NewSubmitLog(uc.reg), emailTool)
 	if err != nil {
 		log.Errorf("生成用户 %d 日报失败: %v", userId, err)
 		return err
@@ -117,12 +120,6 @@ func (uc *SummaryUseCase) PersonalLastDay(userId int64) error {
 }
 
 func (uc *SummaryUseCase) PersonalRecent(userId int64) error {
-	// 检查用户是否开启了邮件发送
-	if !uc.checkEmailEnabled(userId) {
-		log.Infof("用户 %d 已关闭邮件发送，跳过", userId)
-		return nil
-	}
-	chat := uc.chat
 	msg := []*model.ChatCompletionMessage{
 		{
 			Role: model.ChatMessageRoleUser,
@@ -142,14 +139,14 @@ func (uc *SummaryUseCase) PersonalRecent(userId int64) error {
 			},
 		},
 	}
-	r, err := chat.Chat(msg, core_data.NewStatisticPeriod(uc.reg), data2.NewRedisSet(uc.redis))
+	r, err := uc.runChat(msg, core_data.NewStatisticPeriod(uc.reg), data2.NewRedisSet(uc.redis))
 	if err != nil {
 		log.Errorf("生成用户 %d 近期 AI 总结失败: %v", userId, err)
 		return err
 	}
 	log.Info(r)
 	key := fmt.Sprintf("agent:summary:%d:recent", userId)
-	exists, err := uc.redis.Exists(context.Background(), key).Result()
+	exists, err := uc.redisExists(context.Background(), key)
 	if err != nil {
 		return err
 	}
@@ -157,12 +154,42 @@ func (uc *SummaryUseCase) PersonalRecent(userId int64) error {
 		if strings.TrimSpace(r) == "" {
 			return fmt.Errorf("用户 %d 的近期 AI 总结为空，且模型未写入 Redis", userId)
 		}
-		if err := uc.redis.Set(context.Background(), key, normalizeRecentSummaryJSON(r), 0).Err(); err != nil {
+		if err := uc.redisSet(context.Background(), key, normalizeRecentSummaryJSON(r)); err != nil {
 			return err
 		}
 		log.Infof("模型未调用 Redis 工具，已由服务端兜底写入 %s", key)
 	}
 	return nil
+}
+
+func (uc *SummaryUseCase) runChat(messages []*model.ChatCompletionMessage, tools ...tool.AgentToolFactory) (string, error) {
+	if uc.chatFn != nil {
+		return uc.chatFn(messages, tools...)
+	}
+	if uc.chat == nil {
+		return "", fmt.Errorf("AI chat client not configured")
+	}
+	return uc.chat.Chat(messages, tools...)
+}
+
+func (uc *SummaryUseCase) redisExists(ctx context.Context, key string) (int64, error) {
+	if uc.redisExistsFn != nil {
+		return uc.redisExistsFn(ctx, key)
+	}
+	if uc.redis == nil {
+		return 0, fmt.Errorf("redis client not configured")
+	}
+	return uc.redis.Exists(ctx, key).Result()
+}
+
+func (uc *SummaryUseCase) redisSet(ctx context.Context, key string, value string) error {
+	if uc.redisSetFn != nil {
+		return uc.redisSetFn(ctx, key, value)
+	}
+	if uc.redis == nil {
+		return fmt.Errorf("redis client not configured")
+	}
+	return uc.redis.Set(ctx, key, value, 0).Err()
 }
 
 func normalizeRecentSummaryJSON(raw string) string {
@@ -294,7 +321,6 @@ func (uc *SummaryUseCase) WeeklyReportForCoach(coachUserId int64) error {
 		log.Infof("教练 %d 已关闭邮件发送，跳过周报", coachUserId)
 		return nil
 	}
-	chat := uc.chat
 	lastWeekStart := time.Now().AddDate(0, 0, -7).Format("20060102")
 	lastWeekEnd := time.Now().AddDate(0, 0, -1).Format("20060102")
 	msg := []*model.ChatCompletionMessage{
@@ -336,7 +362,7 @@ func (uc *SummaryUseCase) WeeklyReportForCoach(coachUserId int64) error {
 		uc.mailConf.Username,
 		uc.mailConf.Password,
 		uc.mailConf.From)
-	r, err := chat.Chat(msg,
+	r, err := uc.runChat(msg,
 		core_data.NewSubmitCnt(uc.reg),
 		core_data.NewGetProfileById(uc.reg),
 		core_data.NewStatisticPeriod(uc.reg),

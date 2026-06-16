@@ -1,11 +1,15 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
 	profile "cwxu-algo/api/user/v1/profile"
+	"cwxu-algo/app/agent/internal/agent/tool"
+
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 func TestPersonalLastDay_CoachSkipsDailyReportBeforeMonday(t *testing.T) {
@@ -85,6 +89,47 @@ func TestPersonalLastDay_SkipsWhenEmailDisabled(t *testing.T) {
 	}
 	if weeklyCalled {
 		t.Fatal("weekly report should not run when email is disabled")
+	}
+}
+
+func TestPersonalRecentRunsWhenEmailDisabled(t *testing.T) {
+	var profileCalled bool
+	var chatCalled bool
+	var gotKey string
+	var gotValue string
+	uc := &SummaryUseCase{
+		userProfileFn: func(userId int64) *profile.GetByIdRes {
+			profileCalled = true
+			return &profile.GetByIdRes{RoleId: 0, EmailEnabled: false}
+		},
+		chatFn: func(messages []*model.ChatCompletionMessage, tools ...tool.AgentToolFactory) (string, error) {
+			chatCalled = true
+			return `{"msg":["继续加油"],"updateTime":1}`, nil
+		},
+		redisExistsFn: func(ctx context.Context, key string) (int64, error) {
+			return 0, nil
+		},
+		redisSetFn: func(ctx context.Context, key string, value string) error {
+			gotKey = key
+			gotValue = value
+			return nil
+		},
+	}
+
+	if err := uc.PersonalRecent(23); err != nil {
+		t.Fatalf("PersonalRecent() error = %v", err)
+	}
+	if profileCalled {
+		t.Fatal("PersonalRecent() should not check the email preference")
+	}
+	if !chatCalled {
+		t.Fatal("PersonalRecent() should generate the page summary")
+	}
+	if gotKey != "agent:summary:23:recent" {
+		t.Fatalf("redis key = %q, want agent:summary:23:recent", gotKey)
+	}
+	if gotValue == "" {
+		t.Fatal("redis value should not be empty")
 	}
 }
 

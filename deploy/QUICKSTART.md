@@ -124,7 +124,7 @@ bash deploy/scripts/init-admin.sh your_username
 ```bash
 cd /opt/wust-algo/tracker
 bash deploy/scripts/status.sh
-curl http://127.0.0.1:8080/v1/user/group/list
+curl http://127.0.0.1:18080/v1/user/group/list
 ```
 
 Check spider jobs when users report stale OJ data:

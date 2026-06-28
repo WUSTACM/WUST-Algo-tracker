@@ -60,6 +60,16 @@ type RebuildAllReply struct {
 	JobIds     []int64 `json:"jobIds"`
 }
 
+type HealthReply struct {
+	Code        int64  `json:"code"`
+	Message     string `json:"message"`
+	Status      string `json:"status"`
+	Queued      int64  `json:"queued"`
+	Running     int64  `json:"running"`
+	FailedToday int64  `json:"failedToday"`
+	GeneratedAt int64  `json:"generatedAt"`
+}
+
 func (s *SpiderService) getLimiter(userId int64, interval time.Duration) *rate.Limiter {
 	return s.getLimiterByKey(fmt.Sprintf("user:%d", userId), interval)
 }
@@ -308,6 +318,45 @@ func (s *SpiderService) Jobs(ctx context.Context, req *spider.JobsReq) (*spider.
 		Message: "获取抓取任务列表成功",
 		Data:    list,
 		Total:   total,
+	}, nil
+}
+
+func (s *SpiderService) Health(ctx context.Context) (*HealthReply, error) {
+	if auth.GetCurrentUser(ctx) == nil {
+		return nil, errors.Unauthorized("未登录", "请先登录")
+	}
+
+	countByStatus := func(status string) (int64, error) {
+		var count int64
+		err := s.db.Model(&model.SpiderRefreshJob{}).Where("status = ?", status).Count(&count).Error
+		return count, err
+	}
+
+	queued, err := countByStatus("queued")
+	if err != nil {
+		return nil, InternalError
+	}
+	running, err := countByStatus("running")
+	if err != nil {
+		return nil, InternalError
+	}
+
+	var failedToday int64
+	since := time.Now().Add(-24 * time.Hour)
+	if err := s.db.Model(&model.SpiderRefreshJob{}).
+		Where("status = ? AND updated_at >= ?", "failed", since).
+		Count(&failedToday).Error; err != nil {
+		return nil, InternalError
+	}
+
+	return &HealthReply{
+		Code:        0,
+		Message:     "Spider 队列可查询",
+		Status:      "ok",
+		Queued:      queued,
+		Running:     running,
+		FailedToday: failedToday,
+		GeneratedAt: time.Now().Unix(),
 	}, nil
 }
 

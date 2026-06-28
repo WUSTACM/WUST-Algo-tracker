@@ -177,16 +177,18 @@ func (d *ProfileDal) GetUserIdsByGroup(ctx context.Context, groupId int64) ([]in
 
 // UserProfile 用户简要信息（供批量查询用）
 type UserProfile struct {
-	ID     uint
-	Name   string
-	Avatar string
+	ID       uint
+	Username string
+	Name     string
+	Avatar   string
+	GroupId  int64
 }
 
 // GetByIds 批量获取用户简要信息
 func (d *ProfileDal) GetByIds(ctx context.Context, userIds []int64) ([]UserProfile, error) {
 	var profiles []UserProfile
 	err := d.db.Model(&model.User{}).
-		Select("id, name, avatar").
+		Select("id, username, name, avatar, group_id").
 		Where("id IN ?", userIds).
 		Find(&profiles).Error
 	return profiles, err

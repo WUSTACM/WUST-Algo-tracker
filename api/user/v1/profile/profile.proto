@@ -154,6 +154,8 @@ message GetByIdsRes {
     int64 userId = 1;
     string name = 2;
     string avatar = 3;
+    int64 group_id = 4;
+    string username = 5;
   }
   repeated UserProfile profiles = 1;
 }

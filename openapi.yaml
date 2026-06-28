@@ -810,6 +810,8 @@ components:
                     format: int32
                 time:
                     type: string
+                endTime:
+                    type: string
             description: 竞赛日志消息体
         api.core.v1.contest_log.GetContestListRes:
             type: object
@@ -840,6 +842,12 @@ components:
                         $ref: '#/components/schemas/api.core.v1.contest_log.RankingItem'
                 total:
                     type: string
+                problems:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.core.v1.contest_log.ProblemColumn'
+                degradedReason:
+                    type: string
             description: 获取竞赛排行榜响应
         api.core.v1.contest_log.GetUserContestHistoryRes:
             type: object
@@ -853,6 +861,44 @@ components:
                     items:
                         $ref: '#/components/schemas/api.core.v1.contest_log.ContestLog'
             description: 获取用户竞赛历史响应
+        api.core.v1.contest_log.ProblemColumn:
+            type: object
+            properties:
+                index:
+                    type: string
+                name:
+                    type: string
+                problemKey:
+                    type: string
+                contestAccepted:
+                    type: integer
+                    format: int32
+                contestAttempted:
+                    type: integer
+                    format: int32
+                upsolveAccepted:
+                    type: integer
+                    format: int32
+            description: 题目列
+        api.core.v1.contest_log.ProblemResult:
+            type: object
+            properties:
+                problemKey:
+                    type: string
+                status:
+                    type: string
+                acceptedMinute:
+                    type: integer
+                    format: int32
+                wrongBeforeAc:
+                    type: integer
+                    format: int32
+                wrongAttempts:
+                    type: integer
+                    format: int32
+                upsolved:
+                    type: boolean
+            description: 单用户单题结果
         api.core.v1.contest_log.RankingItem:
             type: object
             properties:
@@ -873,6 +919,17 @@ components:
                 totalCount:
                     type: integer
                     format: int32
+                penalty:
+                    type: integer
+                    format: int32
+                problemResults:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.core.v1.contest_log.ProblemResult'
+                groupId:
+                    type: string
+                username:
+                    type: string
             description: 排行榜项
         api.core.v1.spider.JobInfo:
             type: object
@@ -990,6 +1047,8 @@ components:
             type: object
             properties:
                 userId:
+                    type: string
+                platform:
                     type: string
         api.core.v1.spider.UpdateRes:
             type: object
@@ -1225,6 +1284,10 @@ components:
                 name:
                     type: string
                 avatar:
+                    type: string
+                groupId:
+                    type: string
+                username:
                     type: string
         api.user.v1.GetByNameRes:
             type: object

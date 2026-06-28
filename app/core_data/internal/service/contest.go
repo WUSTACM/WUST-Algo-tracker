@@ -8,6 +8,8 @@ import (
 	"cwxu-algo/app/core_data/internal/data"
 	"cwxu-algo/app/core_data/internal/data/dal"
 	"cwxu-algo/app/core_data/internal/data/model"
+	"cwxu-algo/app/core_data/internal/spider"
+	"sort"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/errors"
@@ -51,7 +53,8 @@ func (c ContestLogService) GetContestList(ctx context.Context, req *contest_log.
 			ContestName: v.ContestName,
 			ContestUrl:  v.ContestUrl,
 			TotalCount:  int32(v.TotalCount),
-			Time:        v.Time.Unix(),
+			Time:        unixOrZero(v.Time),
+			EndTime:     unixOrZero(v.EndTime),
 		})
 	}
 
@@ -74,7 +77,8 @@ func (c ContestLogService) GetContestRanking(ctx context.Context, req *contest_l
 		ContestName: contest.ContestName,
 		ContestUrl:  contest.ContestUrl,
 		TotalCount:  int32(contest.TotalCount),
-		Time:        contest.Time.Unix(),
+		Time:        unixOrZero(contest.Time),
+		EndTime:     unixOrZero(contest.EndTime),
 	}
 
 	// 建立到 user 服务的共享连接，避免 N+1 连接开销
@@ -102,48 +106,121 @@ func (c ContestLogService) GetContestRanking(ctx context.Context, req *contest_l
 		userIds = res.UserIds
 		if len(userIds) == 0 {
 			return &contest_log.GetContestRankingRes{
-				Code:    0,
-				Message: "OK",
-				Contest: contestProto,
-				Data:    make([]*contest_log.RankingItem, 0),
-				Total:   0,
+				Code:     0,
+				Message:  "OK",
+				Contest:  contestProto,
+				Data:     make([]*contest_log.RankingItem, 0),
+				Problems: make([]*contest_log.ProblemColumn, 0),
+				Total:    0,
 			}, nil
 		}
 	}
 
-	logs, total, err := c.sbDal.GetContestRanking(ctx, contest.ContestId, contest.Platform, req.Offset, req.Limit, userIds)
+	allLogs, err := c.sbDal.GetContestParticipants(ctx, contest.ContestId, contest.Platform, userIds)
 	if err != nil {
 		return nil, errors.InternalServer("内部服务器错误", err.Error())
+	}
+	var logs []model.ContestLog
+	total := int64(len(allLogs))
+	if isContestPlatform(contest.Platform, spider.AtCoder) {
+		c.applyAtCoderOfficialRanks(ctx, contest.ContestId, allLogs)
+		sortContestLogs(allLogs)
+		logs = paginateContestLogs(allLogs, req.Offset, req.Limit)
+	} else if isContestPlatform(contest.Platform, spider.CodeForces) {
+		c.applyCodeforcesOfficialRanks(ctx, contest.ContestId, allLogs)
+		sortContestLogs(allLogs)
+		logs = paginateContestLogs(allLogs, req.Offset, req.Limit)
+	} else {
+		logs, total, err = c.sbDal.GetContestRanking(ctx, contest.ContestId, contest.Platform, req.Offset, req.Limit, userIds)
+		if err != nil {
+			return nil, errors.InternalServer("内部服务器错误", err.Error())
+		}
 	}
 
 	// 批量获取用户信息，一次 RPC 替代原来的 N 次 GetById
 	nameMap := c.fetchUserNames(ctx, userClient, logs)
+	matrix := c.buildContestMatrix(ctx, contest, logs, allLogs)
+	if len(matrix.Problems) > 0 {
+		contestProto.TotalCount = int32(len(matrix.Problems))
+	}
 
 	items := make([]*contest_log.RankingItem, 0, len(logs))
 	for _, v := range logs {
 		u := nameMap[v.UserID]
 		items = append(items, &contest_log.RankingItem{
-			Rank:       int64(v.Rank),
-			UserId:     v.UserID,
-			Name:       u.Name,
-			Avatar:     u.Avatar,
-			AcCount:    int32(v.AcCount),
-			TotalCount: int32(v.TotalCount),
+			Rank:           int64(v.Rank),
+			UserId:         v.UserID,
+			Username:       u.Username,
+			Name:           u.Name,
+			Avatar:         u.Avatar,
+			AcCount:        int32(v.AcCount),
+			TotalCount:     int32(v.TotalCount),
+			Penalty:        matrix.PenaltyByUser[v.UserID],
+			ProblemResults: matrix.ResultsByUser[v.UserID],
+			GroupId:        u.GroupID,
 		})
 	}
 
 	return &contest_log.GetContestRankingRes{
-		Code:    0,
-		Message: "OK",
-		Contest: contestProto,
-		Data:    items,
-		Total:   total,
+		Code:           0,
+		Message:        "OK",
+		Contest:        contestProto,
+		Data:           items,
+		Total:          total,
+		Problems:       matrix.Problems,
+		DegradedReason: matrix.DegradedReason,
 	}, nil
 }
 
+func sortContestLogs(logs []model.ContestLog) {
+	sort.SliceStable(logs, func(i, j int) bool {
+		leftRanked := logs[i].Rank > 0
+		rightRanked := logs[j].Rank > 0
+		if leftRanked != rightRanked {
+			return leftRanked
+		}
+		if logs[i].Rank != logs[j].Rank {
+			if logs[i].Rank <= 0 {
+				return false
+			}
+			if logs[j].Rank <= 0 {
+				return true
+			}
+			return logs[i].Rank < logs[j].Rank
+		}
+		if logs[i].AcCount != logs[j].AcCount {
+			return logs[i].AcCount > logs[j].AcCount
+		}
+		if logs[i].TotalCount != logs[j].TotalCount {
+			return logs[i].TotalCount > logs[j].TotalCount
+		}
+		return logs[i].UserID < logs[j].UserID
+	})
+}
+
+func paginateContestLogs(logs []model.ContestLog, offset int64, limit int64) []model.ContestLog {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = int64(len(logs))
+	}
+	start := int(offset)
+	if start >= len(logs) {
+		return []model.ContestLog{}
+	}
+	end := start + int(limit)
+	if end > len(logs) {
+		end = len(logs)
+	}
+	return logs[start:end]
+}
+
 type userInfo struct {
-	Avatar string
-	Name   string
+	Avatar   string
+	Name     string
+	Username string
+	GroupID  int64
 }
 
 // fetchUserNames 批量获取用户姓名和头像，一次 RPC 调用
@@ -171,7 +248,7 @@ func (c ContestLogService) fetchUserNames(ctx context.Context, client profile.Pr
 		return result
 	}
 	for _, p := range res.Profiles {
-		result[p.UserId] = userInfo{Name: p.Name, Avatar: p.Avatar}
+		result[p.UserId] = userInfo{Name: p.Name, Username: p.Username, Avatar: p.Avatar, GroupID: p.GroupId}
 	}
 	return result
 }
@@ -191,7 +268,8 @@ func (c ContestLogService) GetUserContestHistory(ctx context.Context, req *conte
 			ContestName: v.ContestName,
 			ContestUrl:  v.ContestUrl,
 			TotalCount:  int32(v.TotalCount),
-			Time:        v.Time.Unix(),
+			Time:        unixOrZero(v.Time),
+			EndTime:     unixOrZero(v.EndTime),
 		})
 	}
 
@@ -200,6 +278,13 @@ func (c ContestLogService) GetUserContestHistory(ctx context.Context, req *conte
 		Message: "OK",
 		Data:    items,
 	}, nil
+}
+
+func unixOrZero(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.Unix()
 }
 
 func NewContestLogService(sbDal *dal.SpiderDal, data *data.Data, reg *discovery.Register) *ContestLogService {

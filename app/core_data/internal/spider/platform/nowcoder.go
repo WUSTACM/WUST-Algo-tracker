@@ -377,6 +377,7 @@ func (nc NewNowCoder) FetchContestLog(userId int64, username string, needAll boo
 		for _, item := range contestResp.Data.DataList {
 			contestId, _ := item.ContestId.Int64()
 			startTimeMs, _ := item.StartTime.Int64()
+			endTimeMs, _ := item.EndTime.Int64()
 
 			result = append(result, model.ContestLog{
 				Platform:    spider.NowCoder,
@@ -388,6 +389,7 @@ func (nc NewNowCoder) FetchContestLog(userId int64, username string, needAll boo
 				ContestName: item.ContestName,
 				ContestUrl:  "https://ac.nowcoder.com/acm/contest/" + strconv.FormatInt(contestId, 10),
 				Time:        time.Unix(startTimeMs/1000, 0),
+				EndTime:     time.Unix(endTimeMs/1000, 0),
 			})
 		}
 

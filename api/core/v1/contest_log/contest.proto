@@ -41,6 +41,7 @@ message ContestLog {
   string contest_url = 6;       // 比赛链接
   int32 total_count = 8;        // 总题数
   int64 time = 10;              // 比赛时间戳
+  int64 end_time = 11;          // 比赛结束时间戳
 }
 
 // 获取竞赛列表请求
@@ -91,6 +92,30 @@ message RankingItem {
   int32 score = 4;              // 得分
   int32 ac_count = 5;           // 过题数
   int32 total_count = 6;        // 总题数
+  int32 penalty = 8;            // 罚时（分钟）
+  repeated ProblemResult problem_results = 9; // 逐题结果
+  int64 group_id = 10;          // 用户所属团队/分组ID
+  string username = 11;         // 用户账号名
+}
+
+// 题目列
+message ProblemColumn {
+  string index = 1;             // 题号，如 A/B/C
+  string name = 2;              // 题目名称
+  string problem_key = 3;       // 题目标识
+  int32 contest_accepted = 4;   // 赛时通过人数
+  int32 contest_attempted = 5;  // 赛时提交人数
+  int32 upsolve_accepted = 6;   // 赛后补题通过人数
+}
+
+// 单用户单题结果
+message ProblemResult {
+  string problem_key = 1;       // 题目标识
+  string status = 2;            // none/contest_ac/contest_failed/upsolve_ac
+  int32 accepted_minute = 3;    // 赛时 AC 分钟数
+  int32 wrong_before_ac = 4;    // AC 前错误次数
+  int32 wrong_attempts = 5;     // 未 AC 错误次数
+  bool upsolved = 6;            // 是否赛后补题 AC
 }
 
 // 获取竞赛排行榜响应
@@ -100,4 +125,6 @@ message GetContestRankingRes {
   ContestLog contest = 5;       // 竞赛历史数据
   repeated RankingItem data = 3; // 排行榜数据
   int64 total = 4;              // 总参赛人数
+  repeated ProblemColumn problems = 6; // 动态题目列
+  string degraded_reason = 7;   // 降级原因
 }

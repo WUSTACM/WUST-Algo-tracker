@@ -198,6 +198,14 @@ func NewHTTPServer(c *conf.Server, logger log.Logger, submitService *service.Sub
 		res, err := statisticService.ClearCache(r.Context(), req.UserID)
 		writeHTTPJSON(w, res, err)
 	})
+	srv.HandleFunc("/v1/core/spider/health", func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.Method != nethttp.MethodGet {
+			w.WriteHeader(nethttp.StatusMethodNotAllowed)
+			return
+		}
+		res, err := spiderService.Health(r.Context())
+		writeHTTPJSON(w, res, err)
+	})
 	srv.HandleFunc("/v1/core/spider/retry", func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		if r.Method != nethttp.MethodPost {
 			w.WriteHeader(nethttp.StatusMethodNotAllowed)

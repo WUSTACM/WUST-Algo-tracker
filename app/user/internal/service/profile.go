@@ -306,9 +306,11 @@ func (p *ProfileService) GetByIds(ctx context.Context, req *profile.GetByIdsReq)
 	list := make([]*profile.GetByIdsRes_UserProfile, 0, len(profiles))
 	for _, v := range profiles {
 		list = append(list, &profile.GetByIdsRes_UserProfile{
-			UserId: int64(v.ID),
-			Name:   v.Name,
-			Avatar: v.Avatar,
+			UserId:   int64(v.ID),
+			Username: v.Username,
+			Name:     v.Name,
+			Avatar:   v.Avatar,
+			GroupId:  v.GroupId,
 		})
 	}
 	return &profile.GetByIdsRes{Profiles: list}, nil

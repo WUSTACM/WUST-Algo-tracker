@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
@@ -195,7 +196,7 @@ func (s *SpiderDal) GetContestByUserId(ctx context.Context, userId int64, cursor
 	return contestLogs, nil
 }
 
-// GetContestList 获取比赛列表（按 contest_id 去重）
+// GetContestList 获取比赛列表（按 platform + contest_id 去重）
 func (s *SpiderDal) GetContestList(_ context.Context, userId int64, offset int64, limit int64, platform string) ([]model.ContestLog, int64, error) {
 	// 先构建基础条件
 	baseQuery := s.db.Model(&model.ContestLog{})
@@ -208,44 +209,46 @@ func (s *SpiderDal) GetContestList(_ context.Context, userId int64, offset int64
 
 	// 1. 计算去重后的总数
 	var total int64
-	countQuery := baseQuery.Select("COUNT(DISTINCT contest_id)")
+	countQuery := baseQuery.Select("COUNT(DISTINCT platform || E'\\x1f' || contest_id)")
 	if err := countQuery.Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	// 2. 使用窗口函数获取每个 contest_id 最新的记录
-	// 先获取去重且分页后的 contest_id 列表
-	type ContestIdWithTime struct {
+	// 先获取去重且分页后的 platform + contest_id 列表
+	type ContestKeyWithTime struct {
+		Platform  string
 		ContestId string
 		MaxTime   time.Time
 	}
-	var contestIdItems []ContestIdWithTime
+	var contestKeyItems []ContestKeyWithTime
 
-	// 构建子查询：按 contest_id 分组，取最新的 time，然后分页
+	// 构建子查询：按 platform + contest_id 分组，取最新的 time，然后分页
 	paginateQuery := baseQuery.
-		Select("contest_id, MAX(time) as max_time").
-		Group("contest_id").
-		Order("max_time DESC").
+		Select("platform, contest_id, MAX(time) as max_time").
+		Group("platform, contest_id").
+		Order("max_time DESC, platform ASC, contest_id DESC").
 		Offset(int(offset)).
 		Limit(int(limit))
 
-	if err := paginateQuery.Scan(&contestIdItems).Error; err != nil {
+	if err := paginateQuery.Scan(&contestKeyItems).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if len(contestIdItems) == 0 {
+	if len(contestKeyItems) == 0 {
 		return []model.ContestLog{}, total, nil
 	}
 
 	// 3. 根据 contest_id 列表获取完整记录
-	contestIds := make([]string, len(contestIdItems))
-	for i, item := range contestIdItems {
-		contestIds[i] = item.ContestId
-	}
-
 	var contestLogs []model.ContestLog
-	finalQuery := s.db.Model(&model.ContestLog{}).
-		Where("contest_id IN ?", contestIds)
+	finalQuery := s.db.Model(&model.ContestLog{})
+	keyConditions := make([]string, 0, len(contestKeyItems))
+	keyArgs := make([]interface{}, 0, len(contestKeyItems)*2)
+	for _, item := range contestKeyItems {
+		keyConditions = append(keyConditions, "(platform = ? AND contest_id = ?)")
+		keyArgs = append(keyArgs, item.Platform, item.ContestId)
+	}
+	finalQuery = finalQuery.Where("("+strings.Join(keyConditions, " OR ")+")", keyArgs...)
 	if userId != -1 {
 		finalQuery = finalQuery.Where("user_id = ?", userId)
 	}
@@ -260,12 +263,12 @@ func (s *SpiderDal) GetContestList(_ context.Context, userId int64, offset int64
 	// 4. 按照分页查询的顺序重新排列结果
 	logMap := make(map[string]model.ContestLog)
 	for _, item := range contestLogs {
-		logMap[item.ContestId] = item
+		logMap[item.Platform+"\x1f"+item.ContestId] = item
 	}
 
-	result := make([]model.ContestLog, 0, len(contestIdItems))
-	for _, item := range contestIdItems {
-		if contestLog, ok := logMap[item.ContestId]; ok {
+	result := make([]model.ContestLog, 0, len(contestKeyItems))
+	for _, item := range contestKeyItems {
+		if contestLog, ok := logMap[item.Platform+"\x1f"+item.ContestId]; ok {
 			result = append(result, contestLog)
 		}
 	}
@@ -288,11 +291,38 @@ func (s *SpiderDal) GetContestRanking(_ context.Context, contestId string, platf
 		return nil, 0, err
 	}
 
-	if err := q.Order("rank ASC").Offset(int(offset)).Limit(int(limit)).Find(&contestLogs).Error; err != nil {
+	if err := q.
+		Order("CASE WHEN rank > 0 THEN 0 ELSE 1 END ASC").
+		Order("rank ASC").
+		Order("ac_count DESC").
+		Order("total_count DESC").
+		Order("user_id ASC").
+		Offset(int(offset)).
+		Limit(int(limit)).
+		Find(&contestLogs).Error; err != nil {
 		return nil, 0, err
 	}
 
 	return contestLogs, total, nil
+}
+
+// GetContestParticipants 获取比赛全部参赛记录，用于构建逐题矩阵和表头统计。
+func (s *SpiderDal) GetContestParticipants(_ context.Context, contestId string, platform string, userIds []int64) ([]model.ContestLog, error) {
+	var contestLogs []model.ContestLog
+	q := s.db.Model(&model.ContestLog{}).Where("contest_id = ? and platform = ?", contestId, platform)
+	if len(userIds) > 0 {
+		q = q.Where("user_id IN ?", userIds)
+	}
+	if err := q.
+		Order("CASE WHEN rank > 0 THEN 0 ELSE 1 END ASC").
+		Order("rank ASC").
+		Order("ac_count DESC").
+		Order("total_count DESC").
+		Order("user_id ASC").
+		Find(&contestLogs).Error; err != nil {
+		return nil, err
+	}
+	return contestLogs, nil
 }
 
 // SetContestCache 缓存比赛记录

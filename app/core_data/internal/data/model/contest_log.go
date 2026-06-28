@@ -13,4 +13,5 @@ type ContestLog struct {
 	TotalCount  int       `gorm:"comment:总题数"`
 	AcCount     int       `gorm:"comment:过题数"`
 	Time        time.Time `gorm:"comment:比赛时间"`
+	EndTime     time.Time `gorm:"comment:比赛结束时间"`
 }

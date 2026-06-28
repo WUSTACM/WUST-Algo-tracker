@@ -594,6 +594,7 @@ type ProblemColumn struct {
 	ContestAccepted  int32                  `protobuf:"varint,4,opt,name=contest_accepted,json=contestAccepted,proto3" json:"contest_accepted,omitempty"`    // 赛时通过人数
 	ContestAttempted int32                  `protobuf:"varint,5,opt,name=contest_attempted,json=contestAttempted,proto3" json:"contest_attempted,omitempty"` // 赛时提交人数
 	UpsolveAccepted  int32                  `protobuf:"varint,6,opt,name=upsolve_accepted,json=upsolveAccepted,proto3" json:"upsolve_accepted,omitempty"`    // 赛后补题通过人数
+	ProblemUrl       string                 `protobuf:"bytes,7,opt,name=problem_url,json=problemUrl,proto3" json:"problem_url,omitempty"`                    // 题目链接
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -668,6 +669,13 @@ func (x *ProblemColumn) GetUpsolveAccepted() int32 {
 		return x.UpsolveAccepted
 	}
 	return 0
+}
+
+func (x *ProblemColumn) GetProblemUrl() string {
+	if x != nil {
+		return x.ProblemUrl
+	}
+	return ""
 }
 
 // 单用户单题结果
@@ -907,7 +915,7 @@ const file_core_v1_contest_log_contest_proto_rawDesc = "" +
 	"\x0fproblem_results\x18\t \x03(\v2&.api.core.v1.contest_log.ProblemResultR\x0eproblemResults\x12\x19\n" +
 	"\bgroup_id\x18\n" +
 	" \x01(\x03R\agroupId\x12\x1a\n" +
-	"\busername\x18\v \x01(\tR\busername\"\xdd\x01\n" +
+	"\busername\x18\v \x01(\tR\busername\"\xfe\x01\n" +
 	"\rProblemColumn\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\tR\x05index\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
@@ -915,7 +923,9 @@ const file_core_v1_contest_log_contest_proto_rawDesc = "" +
 	"problemKey\x12)\n" +
 	"\x10contest_accepted\x18\x04 \x01(\x05R\x0fcontestAccepted\x12+\n" +
 	"\x11contest_attempted\x18\x05 \x01(\x05R\x10contestAttempted\x12)\n" +
-	"\x10upsolve_accepted\x18\x06 \x01(\x05R\x0fupsolveAccepted\"\xdc\x01\n" +
+	"\x10upsolve_accepted\x18\x06 \x01(\x05R\x0fupsolveAccepted\x12\x1f\n" +
+	"\vproblem_url\x18\a \x01(\tR\n" +
+	"problemUrl\"\xdc\x01\n" +
 	"\rProblemResult\x12\x1f\n" +
 	"\vproblem_key\x18\x01 \x01(\tR\n" +
 	"problemKey\x12\x16\n" +

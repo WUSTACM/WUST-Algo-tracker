@@ -60,3 +60,39 @@ func TestContestPlatformMatchingIgnoresCase(t *testing.T) {
 		t.Fatalf("deriveProblemIndex with legacy Codeforces casing = %q, want C", got)
 	}
 }
+
+func TestProblemAliasesMatchSubmissionTitles(t *testing.T) {
+	start := time.Date(2026, 6, 28, 20, 0, 0, 0, time.UTC)
+	problems := []contestProblemMeta{
+		{
+			Key:     "A",
+			Index:   "A",
+			Name:    "签到题",
+			Aliases: []string{"签到题"},
+		},
+	}
+	submissions := []model.SubmitLog{
+		{UserID: 1, Problem: "签到题", Status: "AC", Time: start.Add(3 * time.Minute)},
+	}
+
+	got := calculateContestProblemMatrix(start, start.Add(time.Hour), true, problems, submissions, []int64{1}, []int64{1})
+	user := got.resultsByUser[1]
+	if len(user) != 1 || user[0].Status != "contest_ac" || user[0].AcceptedMinute != 3 {
+		t.Fatalf("alias result = %+v, want contest_ac at minute 3", user)
+	}
+}
+
+func TestSynthesizeNowCoderProblemsKeepsTotalCount(t *testing.T) {
+	problems := synthesizeNowCoderProblems("12345", 3, []model.SubmitLog{
+		{Problem: "A 题目一"},
+	})
+	if len(problems) != 3 {
+		t.Fatalf("len(problems) = %d, want 3", len(problems))
+	}
+	if problems[0].Key != "A 题目一" || problems[0].URL == "" {
+		t.Fatalf("first problem = %+v, want submitted problem with URL", problems[0])
+	}
+	if problems[2].Index != "C" || problems[2].URL == "" {
+		t.Fatalf("third problem = %+v, want synthesized C with URL", problems[2])
+	}
+}

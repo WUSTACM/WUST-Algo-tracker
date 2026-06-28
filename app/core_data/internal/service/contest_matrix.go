@@ -22,9 +22,11 @@ import (
 )
 
 type contestProblemMeta struct {
-	Key   string
-	Index string
-	Name  string
+	Key     string
+	Index   string
+	Name    string
+	URL     string
+	Aliases []string
 }
 
 type contestMatrixResult struct {
@@ -35,13 +37,15 @@ type contestMatrixResult struct {
 }
 
 var (
-	atCoderTaskLinkRe     = regexp.MustCompile(`<a[^>]+href=["']/contests/[^"']+/tasks/([^"']+)["'][^>]*>([^<]+)</a>`)
-	atCoderMatrixTimeRe   = regexp.MustCompile(`<time[^>]+class=['"][^'"]*fixtime-full[^'"]*['"][^>]*>([^<]+)</time>`)
-	atCoderMatrixTitleRe  = regexp.MustCompile(`<a[^>]+class=['"][^'"]*contest-title[^'"]*['"][^>]*>([^<]+)</a>`)
-	atCoderTaskAlphabetRe = regexp.MustCompile(`^[A-Za-z]+$`)
-	nowCoderStartTimeRe   = regexp.MustCompile(`"startTime"\s*:\s*(\d+)`)
-	nowCoderEndTimeRe     = regexp.MustCompile(`"endTime"\s*:\s*(\d+)`)
-	nowCoderNameRe        = regexp.MustCompile(`"name"\s*:\s*"([^"]+)"`)
+	atCoderTaskLinkRe      = regexp.MustCompile(`<a[^>]+href=["']/contests/[^"']+/tasks/([^"']+)["'][^>]*>([^<]+)</a>`)
+	atCoderMatrixTimeRe    = regexp.MustCompile(`<time[^>]+class=['"][^'"]*fixtime-full[^'"]*['"][^>]*>([^<]+)</time>`)
+	atCoderMatrixTitleRe   = regexp.MustCompile(`<a[^>]+class=['"][^'"]*contest-title[^'"]*['"][^>]*>([^<]+)</a>`)
+	atCoderTaskAlphabetRe  = regexp.MustCompile(`^[A-Za-z]+$`)
+	nowCoderProblemIndexRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_+-]*$`)
+	nowCoderProblemLinkRe  = regexp.MustCompile(`<a[^>]+href=["'](/acm/contest/(\d+)/([^"'/?#]+))["'][^>]*>([^<]*)</a>`)
+	nowCoderStartTimeRe    = regexp.MustCompile(`"startTime"\s*:\s*(\d+)`)
+	nowCoderEndTimeRe      = regexp.MustCompile(`"endTime"\s*:\s*(\d+)`)
+	nowCoderNameRe         = regexp.MustCompile(`"name"\s*:\s*"([^"]+)"`)
 )
 
 var (
@@ -92,7 +96,7 @@ func (c ContestLogService) buildContestMatrix(ctx context.Context, contest model
 			result.DegradedReason = "Codeforces 元数据获取失败，题目列按本站提交记录生成。"
 		}
 	}
-	if isContestPlatform(contest.Platform, spider.NowCoder) && (start.IsZero() || end.IsZero() || !end.After(start)) {
+	if isContestPlatform(contest.Platform, spider.NowCoder) {
 		meta, err := fetchNowCoderMatrixMeta(contest.ContestId)
 		if err == nil {
 			if !meta.Start.IsZero() {
@@ -101,6 +105,7 @@ func (c ContestLogService) buildContestMatrix(ctx context.Context, contest model
 			if !meta.End.IsZero() {
 				end = meta.End
 			}
+			metaProblems = meta.Problems
 		} else if result.DegradedReason == "" {
 			result.DegradedReason = "NowCoder 元数据获取失败，题目列按本站提交记录生成。"
 		}
@@ -115,6 +120,9 @@ func (c ContestLogService) buildContestMatrix(ctx context.Context, contest model
 			result.DegradedReason = "缺少官方比赛结束时间，赛后补题不会单独标记。"
 		}
 	}
+	if isContestPlatform(contest.Platform, spider.NowCoder) && len(metaProblems) == 0 && contest.TotalCount > 0 {
+		metaProblems = synthesizeNowCoderProblems(contest.ContestId, int(contest.TotalCount), submissions)
+	}
 
 	problems := normalizeContestProblems(contest.Platform, contest.ContestId, metaProblems, submissions)
 	result.Problems = make([]*contest_log.ProblemColumn, 0, len(problems))
@@ -123,6 +131,7 @@ func (c ContestLogService) buildContestMatrix(ctx context.Context, contest model
 			Index:      problem.Index,
 			Name:       problem.Name,
 			ProblemKey: problem.Key,
+			ProblemUrl: problem.URL,
 		})
 	}
 
@@ -324,6 +333,7 @@ func codeforcesStandingsToMeta(contestID string, parsed codeforcesStandingsRespo
 			Key:   key,
 			Index: index,
 			Name:  name,
+			URL:   codeforcesProblemURL(contestID, problem),
 		})
 	}
 	return meta
@@ -388,6 +398,7 @@ func fetchNowCoderMatrixMeta(contestID string) (atCoderMatrixMeta, error) {
 			meta.End = time.Unix(ms/1000, 0)
 		}
 	}
+	meta.Problems = parseNowCoderProblems(raw, contestID)
 	if meta.Start.IsZero() || meta.End.IsZero() {
 		return atCoderMatrixMeta{}, fmt.Errorf("missing nowcoder contest window")
 	}
@@ -446,9 +457,98 @@ func fetchAtCoderTaskPage(client *http.Client, tasksURL string, contestID string
 			Key:   key,
 			Index: deriveProblemIndex(spider.AtCoder, contestID, key, len(tasks)),
 			Name:  title,
+			URL:   atCoderProblemURL(contestID, key),
 		})
 	}
 	return tasks, nil
+}
+
+func parseNowCoderProblems(raw string, contestID string) []contestProblemMeta {
+	contestID = strings.TrimSpace(contestID)
+	if contestID == "" {
+		return nil
+	}
+	matches := nowCoderProblemLinkRe.FindAllStringSubmatch(raw, -1)
+	seen := map[string]struct{}{}
+	problems := make([]contestProblemMeta, 0)
+	for _, match := range matches {
+		if len(match) < 5 || strings.TrimSpace(match[2]) != contestID {
+			continue
+		}
+		index := strings.TrimSpace(html.UnescapeString(match[3]))
+		if !nowCoderProblemIndexRe.MatchString(index) {
+			continue
+		}
+		title := strings.TrimSpace(html.UnescapeString(match[4]))
+		if title == "" {
+			title = index
+		}
+		url := "https://ac.nowcoder.com" + strings.TrimSpace(match[1])
+		key := title
+		if key == "" || key == index {
+			key = index
+		}
+		if _, ok := seen[index]; ok {
+			continue
+		}
+		seen[index] = struct{}{}
+		problems = append(problems, contestProblemMeta{
+			Key:     key,
+			Index:   strings.ToUpper(index),
+			Name:    title,
+			URL:     url,
+			Aliases: nowCoderProblemAliases(index, title),
+		})
+	}
+	sort.SliceStable(problems, func(i, j int) bool {
+		return naturalProblemOrder(problems[i].Index, problems[j].Index, problems[i].Key, problems[j].Key)
+	})
+	return problems
+}
+
+func synthesizeNowCoderProblems(contestID string, totalCount int, submissions []model.SubmitLog) []contestProblemMeta {
+	if totalCount <= 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	problems := make([]contestProblemMeta, 0, totalCount)
+	for _, sub := range submissions {
+		key := strings.TrimSpace(sub.Problem)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		index := deriveProblemIndex(spider.NowCoder, contestID, key, len(problems))
+		problems = append(problems, contestProblemMeta{
+			Key:     key,
+			Index:   index,
+			Name:    key,
+			URL:     nowCoderProblemURL(contestID, index),
+			Aliases: nowCoderProblemAliases(index, key),
+		})
+		if len(problems) >= totalCount {
+			break
+		}
+	}
+	for len(problems) < totalCount {
+		index := string(rune('A' + len(problems)%26))
+		key := "__nowcoder_" + contestID + "_" + index
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		problems = append(problems, contestProblemMeta{
+			Key:     key,
+			Index:   index,
+			Name:    index,
+			URL:     nowCoderProblemURL(contestID, index),
+			Aliases: []string{index},
+		})
+	}
+	return problems
 }
 
 func fetchContestHTML(client *http.Client, pageURL string) ([]byte, error) {
@@ -502,7 +602,11 @@ func normalizeContestProblems(platform string, contestID string, metaProblems []
 		if problem.Name == "" {
 			problem.Name = key
 		}
+		if problem.URL == "" {
+			problem.URL = problemURL(platform, contestID, problem.Index, key)
+		}
 		problem.Key = key
+		problem.Aliases = append(problem.Aliases, problem.Index, problem.Name)
 		problems = append(problems, problem)
 	}
 	for _, sub := range submissions {
@@ -521,6 +625,7 @@ func normalizeContestProblems(platform string, contestID string, metaProblems []
 			Key:   key,
 			Index: deriveProblemIndex(platform, contestID, key, len(problems)),
 			Name:  key,
+			URL:   problemURL(platform, contestID, deriveProblemIndex(platform, contestID, key, len(problems)), key),
 		})
 	}
 	if len(metaProblems) == 0 {
@@ -529,6 +634,111 @@ func normalizeContestProblems(platform string, contestID string, metaProblems []
 		})
 	}
 	return problems
+}
+
+func problemURL(platform string, contestID string, index string, key string) string {
+	switch {
+	case isContestPlatform(platform, spider.AtCoder):
+		taskID := strings.TrimSpace(key)
+		if taskID == "" {
+			taskID = strings.TrimSpace(index)
+		}
+		return atCoderProblemURL(contestID, taskID)
+	case isContestPlatform(platform, spider.CodeForces):
+		return codeforcesProblemURLFromIndex(contestID, index)
+	case isContestPlatform(platform, spider.NowCoder):
+		return nowCoderProblemURL(contestID, index)
+	default:
+		return ""
+	}
+}
+
+func atCoderProblemURL(contestID string, taskID string) string {
+	contestID = strings.TrimSpace(contestID)
+	taskID = strings.TrimSpace(taskID)
+	if contestID == "" || taskID == "" {
+		return ""
+	}
+	return "https://atcoder.jp/contests/" + url.PathEscape(contestID) + "/tasks/" + url.PathEscape(taskID)
+}
+
+func codeforcesProblemURL(contestID string, problem codeforcesMatrixProblem) string {
+	problemContestID := strings.TrimSpace(contestID)
+	if problem.ContestID != 0 {
+		problemContestID = fmt.Sprintf("%d", problem.ContestID)
+	}
+	return codeforcesProblemURLFromIndex(problemContestID, problem.Index)
+}
+
+func codeforcesProblemURLFromIndex(contestID string, index string) string {
+	contestID = strings.TrimSpace(contestID)
+	index = strings.TrimSpace(index)
+	if contestID == "" || index == "" {
+		return ""
+	}
+	return "https://codeforces.com/contest/" + url.PathEscape(contestID) + "/problem/" + url.PathEscape(index)
+}
+
+func nowCoderProblemURL(contestID string, index string) string {
+	contestID = strings.TrimSpace(contestID)
+	index = strings.TrimSpace(index)
+	if contestID == "" || index == "" {
+		return ""
+	}
+	return "https://ac.nowcoder.com/acm/contest/" + url.PathEscape(contestID) + "/" + url.PathEscape(index)
+}
+
+func nowCoderProblemAliases(index string, title string) []string {
+	index = strings.TrimSpace(index)
+	title = strings.TrimSpace(title)
+	aliases := make([]string, 0, 4)
+	if index != "" {
+		aliases = append(aliases, index, strings.ToUpper(index))
+	}
+	if title != "" {
+		aliases = append(aliases, title)
+		if index != "" {
+			aliases = append(aliases, index+" "+title, strings.ToUpper(index)+" "+title)
+		}
+	}
+	return aliases
+}
+
+func buildProblemAliasMap(problems []contestProblemMeta) map[string]string {
+	aliases := make(map[string]string, len(problems)*3)
+	for _, problem := range problems {
+		registerProblemAlias(aliases, problem.Key, problem.Key)
+		registerProblemAlias(aliases, problem.Index, problem.Key)
+		registerProblemAlias(aliases, problem.Name, problem.Key)
+		for _, alias := range problem.Aliases {
+			registerProblemAlias(aliases, alias, problem.Key)
+		}
+	}
+	return aliases
+}
+
+func registerProblemAlias(aliases map[string]string, alias string, canonical string) {
+	alias = strings.TrimSpace(alias)
+	canonical = strings.TrimSpace(canonical)
+	if alias == "" || canonical == "" {
+		return
+	}
+	aliases[alias] = canonical
+	aliases[strings.ToLower(alias)] = canonical
+}
+
+func canonicalProblemKey(raw string, aliases map[string]string) string {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return ""
+	}
+	if canonical, ok := aliases[key]; ok {
+		return canonical
+	}
+	if canonical, ok := aliases[strings.ToLower(key)]; ok {
+		return canonical
+	}
+	return key
 }
 
 func deriveProblemIndex(platform string, contestID string, problem string, fallback int) string {
@@ -598,6 +808,7 @@ func calculateContestProblemMatrix(start time.Time, end time.Time, hasReliableWi
 	for _, problem := range problems {
 		problemSet[problem.Key] = struct{}{}
 	}
+	problemAliases := buildProblemAliasMap(problems)
 	stateByUser := map[int64]map[string]*problemUserState{}
 	ensureState := func(userID int64, problemKey string) *problemUserState {
 		if stateByUser[userID] == nil {
@@ -614,6 +825,7 @@ func calculateContestProblemMatrix(start time.Time, end time.Time, hasReliableWi
 		if key == "" {
 			key = strings.TrimSpace(sub.SubmitID)
 		}
+		key = canonicalProblemKey(key, problemAliases)
 		if _, ok := problemSet[key]; !ok {
 			continue
 		}

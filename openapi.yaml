@@ -879,6 +879,8 @@ components:
                 upsolveAccepted:
                     type: integer
                     format: int32
+                problemUrl:
+                    type: string
             description: 题目列
         api.core.v1.contest_log.ProblemResult:
             type: object

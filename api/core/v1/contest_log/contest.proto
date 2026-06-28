@@ -106,6 +106,7 @@ message ProblemColumn {
   int32 contest_accepted = 4;   // 赛时通过人数
   int32 contest_attempted = 5;  // 赛时提交人数
   int32 upsolve_accepted = 6;   // 赛后补题通过人数
+  string problem_url = 7;       // 题目链接
 }
 
 // 单用户单题结果

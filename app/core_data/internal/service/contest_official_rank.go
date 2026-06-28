@@ -115,6 +115,11 @@ func (c ContestLogService) applyCodeforcesOfficialRanks(ctx context.Context, con
 		handle := handleByUser[logs[i].UserID]
 		if rank, ok := rankByHandle[handle]; ok && rank > 0 {
 			logs[i].Rank = rank
+		} else {
+			// Codeforces official standings are the source of truth for contest
+			// rank. If a bound handle is not in the official standings, the user
+			// only has local/upsolve records and must not keep a stale crawled rank.
+			logs[i].Rank = 0
 		}
 	}
 }

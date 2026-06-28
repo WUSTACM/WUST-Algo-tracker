@@ -147,13 +147,17 @@ func (c ContestLogService) GetContestRanking(ctx context.Context, req *contest_l
 	items := make([]*contest_log.RankingItem, 0, len(logs))
 	for _, v := range logs {
 		u := nameMap[v.UserID]
+		acCount := int32(v.AcCount)
+		if len(matrix.Problems) > 0 {
+			acCount = matrix.ContestAcCountByUser[v.UserID]
+		}
 		items = append(items, &contest_log.RankingItem{
 			Rank:           int64(v.Rank),
 			UserId:         v.UserID,
 			Username:       u.Username,
 			Name:           u.Name,
 			Avatar:         u.Avatar,
-			AcCount:        int32(v.AcCount),
+			AcCount:        acCount,
 			TotalCount:     int32(v.TotalCount),
 			Penalty:        matrix.PenaltyByUser[v.UserID],
 			ProblemResults: matrix.ResultsByUser[v.UserID],

@@ -30,10 +30,11 @@ type contestProblemMeta struct {
 }
 
 type contestMatrixResult struct {
-	Problems       []*contest_log.ProblemColumn
-	ResultsByUser  map[int64][]*contest_log.ProblemResult
-	PenaltyByUser  map[int64]int32
-	DegradedReason string
+	Problems             []*contest_log.ProblemColumn
+	ResultsByUser        map[int64][]*contest_log.ProblemResult
+	PenaltyByUser        map[int64]int32
+	ContestAcCountByUser map[int64]int32
+	DegradedReason       string
 }
 
 var (
@@ -57,8 +58,9 @@ var (
 
 func (c ContestLogService) buildContestMatrix(ctx context.Context, contest model.ContestLog, pageLogs []model.ContestLog, allLogs []model.ContestLog) contestMatrixResult {
 	result := contestMatrixResult{
-		ResultsByUser: make(map[int64][]*contest_log.ProblemResult),
-		PenaltyByUser: make(map[int64]int32),
+		ResultsByUser:        make(map[int64][]*contest_log.ProblemResult),
+		PenaltyByUser:        make(map[int64]int32),
+		ContestAcCountByUser: make(map[int64]int32),
 	}
 	if len(pageLogs) == 0 || contest.ContestId == "" || contest.Platform == "" {
 		return result
@@ -145,6 +147,7 @@ func (c ContestLogService) buildContestMatrix(ctx context.Context, contest model
 	}
 	result.ResultsByUser = calculated.resultsByUser
 	result.PenaltyByUser = calculated.penaltyByUser
+	result.ContestAcCountByUser = calculated.contestAcCountByUser
 	return result
 }
 
@@ -782,9 +785,10 @@ func naturalProblemOrder(leftIndex, rightIndex, leftKey, rightKey string) bool {
 }
 
 type contestProblemCalculation struct {
-	resultsByUser map[int64][]*contest_log.ProblemResult
-	penaltyByUser map[int64]int32
-	problemStats  map[string]problemColumnStat
+	resultsByUser        map[int64][]*contest_log.ProblemResult
+	penaltyByUser        map[int64]int32
+	contestAcCountByUser map[int64]int32
+	problemStats         map[string]problemColumnStat
 }
 
 type problemColumnStat struct {
@@ -860,6 +864,7 @@ func calculateContestProblemMatrix(start time.Time, end time.Time, hasReliableWi
 
 	stats := map[string]problemColumnStat{}
 	penaltyByUser := map[int64]int32{}
+	contestAcCountByUser := map[int64]int32{}
 	for _, userID := range allUserIDs {
 		for _, problem := range problems {
 			state := ensureState(userID, problem.Key)
@@ -870,6 +875,7 @@ func calculateContestProblemMatrix(start time.Time, end time.Time, hasReliableWi
 			if state.hasContestAC {
 				stat.contestAccepted++
 				penaltyByUser[userID] += state.contestMinute + state.wrongBeforeAC*20
+				contestAcCountByUser[userID]++
 			}
 			if state.upsolveAC {
 				stat.upsolveAccepted++
@@ -904,9 +910,10 @@ func calculateContestProblemMatrix(start time.Time, end time.Time, hasReliableWi
 		resultsByUser[userID] = results
 	}
 	return contestProblemCalculation{
-		resultsByUser: resultsByUser,
-		penaltyByUser: penaltyByUser,
-		problemStats:  stats,
+		resultsByUser:        resultsByUser,
+		penaltyByUser:        penaltyByUser,
+		contestAcCountByUser: contestAcCountByUser,
+		problemStats:         stats,
 	}
 }
 
